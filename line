@@ -1,0 +1,65 @@
+import numpy as np
+import cv2
+
+# Initialize the HOG descriptor/person detector
+hog = cv2.HOGDescriptor()
+hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+cv2.startWindowThread()
+
+# Open webcam video stream
+cap = cv2.VideoCapture(0)
+
+# Create the output video file
+out = cv2.VideoWriter(
+    'output.avi',
+    cv2.VideoWriter_fourcc(*'MJPG'),
+    15.,
+    (640, 480))
+
+while True:
+    # Capture frame-by-frame
+    ret, frame = cap.read()
+
+    # Resize the frame for faster detection
+    frame = cv2.resize(frame, (640, 480))
+    # Convert the frame to grayscale for faster detection
+    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+
+    # Detect people in the image and get bounding boxes
+    boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8))
+
+    boxes = np.array([[x, y, x + w, y + h] for (x, y, w, h) in boxes])
+
+    for (xA, yA, xB, yB) in boxes:
+        # Calculate the center point of the bounding box
+        center_x = (xA + xB) // 2
+        center_y = (yA + yB) // 2
+
+        # Draw a circle at the center of the bounding box
+        cv2.circle(frame, (center_x, center_y), 3, (0, 0, 255), -1)  # Red circle
+
+        # Draw a rectangle around the detected person
+        cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)  # Green rectangle
+
+        # Calculate the position for the line in the lower third of the frame
+        line_y = int(yB + (frame.shape[0] - yB) / 3)
+
+        # Draw a blue line in the lower third of the frame
+        line_color = (255, 0, 0)  # Blue color (BGR)
+        cv2.line(frame, (xA, line_y), (xB, line_y), line_color, 2)
+
+    # Write the output video
+    out.write(frame.astype('uint8'))
+    # Display the resulting frame with annotations
+    cv2.imshow('frame', frame)
+
+    # Break the loop if 'q' is pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release resources
+cap.release()
+out.release()
+cv2.destroyAllWindows()
+cv2.waitKey(1)
