@@ -46,8 +46,10 @@ while True:
 
     # Write the output video
     out.write(frame.astype('uint8'))
-    # Display the resulting frame
+    # Display the resulting frame with center points
     cv2.imshow('frame', frame)
+
+    # Break the loop if 'q' is pressed
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
