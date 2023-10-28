@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Display</title>
+</head>
+<body>
+    <button type="button" class="btn btn-primary btn-lg">Large button</button>
+    <button type="button" class="btn btn-secondary btn-lg">Large button</button>
+    <h1>Camera Display</h1>
+    <video id="camera" autoplay></video>
+
+    <!-- ô hiện kết quả -->
+    <div id="result">
+        <h2>Result:</h2>
+        <p id="resultText">No result yet</p>
+    </div>
+
+    <!-- nút tải kết quả -->
+    <button id="downloadButton" onclick="downloadResult()">Download Result</button>
+
+    <script>
+        // Get access to the user's camera and display the stream
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function (stream) {
+                var videoElement = document.getElementById('camera');
+                videoElement.srcObject = stream;
+            })
+            .catch(function (error) {
+                console.error('Error accessing camera:', error);
+            });
+
+        // Hàm để tải kết quả
+        function downloadResult() {
+            var resultText = document.getElementById('resultText').textContent;
+
+            // Tạo một đối tượng Blob từ kết quả văn bản
+            var blob = new Blob([resultText], { type: 'text/plain' });
+
+            // Tạo một URL tạm thời cho Blob
+            var url = window.URL.createObjectURL(blob);
+
+            // Tạo một thẻ a để tải kết quả
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'result.txt';
+
+            // Tự động kích hoạt sự kiện nhấn nút để tải
+            a.click();
+
+            // Giải phóng URL tạm thời
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
