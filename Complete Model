@@ -1,0 +1,98 @@
+import cv2
+
+# Load the pre-trained Haar Cascade Classifier for full body detection
+body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
+
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+# Set the desired frame rate
+desired_fps = 25
+frame_delay = 1.0 / desired_fps  # Calculate the time delay for the desired frame rate
+
+people = []  # List to store detected people
+next_person_id = 1  # Initialize unique ID counter
+frame_count = 0
+frame_skip = 2
+
+# Define the counting line (horizontal line)
+line_x1 = 0     # Starting X-coordinate of the counting line
+line_x2 = 640   # Ending X-coordinate of the counting line (entire screen width)
+line_y = 360    # Y-coordinate of the counting line (horizontal)
+
+people_in_count = 0
+people_out_count = 0
+
+while True:
+    ret, frame = cap.read()
+    frame_count += 1
+    if frame_count % frame_skip != 0:
+        continue
+    
+    if not ret:
+        break
+
+    # Convert the frame to grayscale for body detection
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Perform body detection
+    bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(20, 20))
+
+    # Create a list to track people who are still present
+    current_people = []
+
+    for (x, y, w, h) in bodies:
+        person_detected = False
+        for person in people:
+            px, py, pw, ph, pid, crossed_line = person
+            # Check if the detected body is close to an existing person
+            if abs(x - px) < 20 and abs(y - py) < 20:
+                person[0] = x
+                person[1] = y
+                person[2] = w
+                person[3] = h
+                person_detected = True
+                # Calculate and draw the centroid
+                centroid_x = x + w // 2
+                centroid_y = y + h
+                cv2.circle(frame, (centroid_x, centroid_y), 4, (0, 0, 255), -1)
+                # Check if the person has crossed the line
+                if not crossed_line and line_x1 < centroid_x < line_x2:
+                    people_in_count += 1
+                    person[5] = True
+                elif crossed_line and (centroid_x < line_x1 or centroid_x > line_x2):
+                    people_out_count += 1
+                    person[5] = False
+                # Append the person to the current_people list
+                current_people.append(person)
+                break
+        if not person_detected:
+            # Assign a new ID to the detected person and add them to the list
+            pid = next_person_id
+            next_person_id += 1
+            # Initialize crossed_line based on initial position
+            crossed_line = line_x1 < x < line_x2
+            people.append([x, y, w, h, pid, crossed_line])
+            current_people.append([x, y, w, h, pid, crossed_line])
+    # Update the people list with the current_people
+    people = current_people
+
+    # Draw the counting line (horizontal line)
+    cv2.line(frame, (line_x1, line_y), (line_x2, line_y), (0, 0, 255), 2)
+
+    # Draw bounding boxes and IDs for each person
+    for person in people:
+        x, y, w, h, pid, _ = person
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.putText(frame, str(pid), (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    # Display the frame with person detection and counting
+    cv2.putText(frame, f"People In: {people_in_count}", (7, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    cv2.putText(frame, f"People Out: {people_out_count}", (7, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    cv2.imshow("Person Detection and Counting", frame)
+
+    if cv2.waitKey(1) == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
