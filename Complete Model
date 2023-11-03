@@ -46,7 +46,7 @@ while True:
         for person in people:
             px, py, pw, ph, pid, crossed_line = person
             # Check if the detected body is close to an existing person
-            if abs(x - px) < 20 and abs(y - py) < 20:
+            if abs(x - px) < 20 and abs(y - py) < 20 and abs(w - pw) < 20 and abs(h - ph) < 20:
                 person[0] = x
                 person[1] = y
                 person[2] = w
