@@ -1,0 +1,98 @@
+import cv2
+import numpy as np
+import threading
+import streamlit as st
+
+# Load the body cascade classifier
+body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
+
+# Function to draw a line on the frame
+def draw_line(image, line):
+    cv2.line(image, line[0], line[1], (255, 0, 0), 2)
+
+# Function to detect and track pedestrians
+def detect_people(cap):
+    global enter_count, exit_count, tracking_objects, next_object_id  # Declare as global
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (640, 480))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        draw_line(frame, line)
+
+        bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
+
+        for (x, y, w, h) in bodies:
+            centroid_x = x + w // 2
+            centroid_y = y + h
+
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.circle(frame, (centroid_x, centroid_y), 4, (0, 0, 255), -1)
+
+            tracked = False
+            object_id = None
+            for obj_id, values in tracking_objects.items():
+                try:
+                    tracker, bbox, prev_centroid, status = values
+                    x1, y1, w1, h1 = bbox
+                    dist = ((centroid_x - prev_centroid[0]) ** 2 + (centroid_y - prev_centroid[1]) ** 2) ** 0.5
+                except:
+                    continue
+
+                if dist < 50:
+                    tracked = True
+                    object_id = obj_id
+                    break
+
+            if not tracked:
+                bbox = (x, y, w, h)
+                tracker = cv2.TrackerMIL_create()
+                tracking_objects[next_object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
+                object_id = next_object_id
+                next_object_id += 1
+
+                # Initialize tracking
+                tracker.init(frame, bbox)
+
+            if centroid_y < line[0][1] and tracking_objects[object_id][2][1] >= line[0][1]:
+                enter_count += 1
+                tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'in')
+                message = f"Person {object_id} entered. Total people entered: {enter_count}"
+                st.text(message)
+            elif centroid_y > line[1][1] and tracking_objects[object_id][2][1] <= line[1][1]:
+                exit_count += 1
+                tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
+                message = f"Person {object_id} exited. Total people exited: {exit_count}"
+                st.text(message)
+
+        for obj_id in list(tracking_objects.keys()):
+            tracker, bbox, prev_centroid, status = tracking_objects[obj_id]
+            success, new_bbox = tracker.update(frame)
+
+            if success:
+                (x1, y1, w1, h1) = [int(v) for v in new_bbox]
+                tracking_objects[obj_id] = (tracker, new_bbox, (x1 + w1 // 2, y1 + h1 // 2), status)
+
+        st.image(frame, channels="BGR", use_column_width=True)
+
+cap = cv2.VideoCapture(0)  # Open a video stream from the camera (use ID 0 or replace with a URL if needed)
+# Set the desired frame rate
+desired_fps = 30
+frame_delay = int(1000 / desired_fps)  # Calculate the time delay for the desired frame rate
+
+# Define the line that divides the region of interest
+line = [(0, 480 // 3), (640, 480 // 3)]
+
+enter_count = 0
+exit_count = 0
+
+# Create a dictionary to keep track of detected pedestrians
+tracking_objects = {}
+next_object_id = 1  # Start with ID 1
+
+# Start the pedestrian detection thread
+detect_thread = threading.Thread(target=detect_people, args=(cap,))
+detect_thread.start()
