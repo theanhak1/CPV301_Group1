@@ -1,0 +1,115 @@
+import cv2
+import streamlit as st
+
+body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
+
+cap = cv2.VideoCapture(1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+desired_fps = 25
+frame_delay = 1.0 / desired_fps
+enter_count = 0
+exit_count = 0
+
+line = [(0, 480 // 2), (640, 480 // 2)]
+tracker = cv2.TrackerCSRT_create()
+tracking_objects = {}
+next_object_id = 1
+# Create a Streamlit web app
+st.title("People Detection and Counting")
+# Create a placeholder to display the camera feed
+image_placeholder = st.empty()
+
+def draw_line(image, line):
+    cv2.line(image, line[0], line[1], (255, 0, 0), 2)
+
+def main():
+    global enter_count, exit_count, tracking_objects, cap, next_object_id
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            st.error("Error: Failed to capture camera frame.")
+            break
+
+        frame = cv2.resize(frame, (640, 480))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        draw_line(frame, line)
+
+        bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50), flags=cv2.CASCADE_SCALE_IMAGE)
+        
+
+        for (x, y, w, h) in bodies:
+            centroid_x = x + w // 2
+            centroid_y = y + h // 2
+
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.circle(frame, (centroid_x, centroid_y), 4, (0, 0, 255), -1)
+
+            tracked = False
+            object_id = None
+            for obj_id, values in tracking_objects.items():
+                try:
+                    _, bbox, prev_centroid, status = values
+                    x1, y1, w1, h1 = bbox
+                    dist = ((centroid_x - prev_centroid[0]) ** 2 + (centroid_y - prev_centroid[1]) ** 2) ** 0.5
+                except:
+                    continue
+
+                if dist < 50:
+                    tracked = True
+                    object_id = obj_id
+                    break
+
+            if not tracked:
+                bbox = (x, y, w, h)
+                tracking_objects[next_object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
+                object_id = next_object_id
+                next_object_id += 1
+
+                tracker.init(frame, bbox)
+
+            if centroid_y < line[0][1] and tracking_objects[object_id][2][1] >= line[0][1] and tracking_objects[object_id][3] != 'in':
+                enter_count += 1
+                tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'in')
+                message = f"Person {object_id} entered. Total enter count: {enter_count}"
+                print(message)
+            elif centroid_y > line[1][1] and tracking_objects[object_id][2][1] <= line[1][1] and tracking_objects[object_id][3] != 'out':
+                exit_count += 1
+                tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
+                message = f"Person {object_id} exited. Total exit count: {exit_count}"
+                print(message)
+
+        for obj_id, values in list(tracking_objects.items()):
+            try:
+                _, bbox, _, status = values
+            except ValueError:
+                st.warning(f"Skipping invalid values for object ID: {obj_id}")
+                continue
+
+            success, new_bbox = tracker.update(frame)
+
+            if success:
+                (x1, y1, w1, h1) = [int(v) for v in new_bbox]
+                tracking_objects[obj_id] = (tracker, new_bbox, (x1 + w1 // 2, y1 + h1 // 2), status)
+            else:
+                del tracking_objects[obj_id]
+
+        cv2.putText(frame, f"Enter: {enter_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(frame, f"Exit: {exit_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        for obj_id, (_, bbox, _, status) in tracking_objects.items():
+            x1, y1, w1, h1 = bbox
+            cv2.rectangle(frame, (x1, y1), (x1 + w1, y1 + h1), (0, 255, 0), 2)
+            cv2.putText(frame, f"ID: {str(obj_id)} - {status}", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+        # Display the frame in the Streamlit app
+        image_placeholder.image(frame, channels="BGR", use_column_width=True)
+
+    # Release the camera when the app is closed
+    cap.release()
+
+if __name__ == "__main__":
+    main()
