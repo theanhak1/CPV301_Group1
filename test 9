@@ -26,64 +26,57 @@ def draw_line(image, line):
 def main():
     global enter_count, exit_count, tracking_objects, cap, next_object_id
 
-while True:
-    ret, frame = cap.read()
+    while True:
+        ret, frame = cap.read()
 
-    if not ret:
-        st.error("Error: Failed to capture camera frame.")
-        break
+        if not ret:
+            st.error("Error: Failed to capture camera frame.")
+            break
 
-    frame = cv2.resize(frame, (640, 480))
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    draw_line(frame, line)
+        frame = cv2.resize(frame, (640, 480))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        draw_line(frame, line)
 
-    bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50), flags=cv2.CASCADE_SCALE_IMAGE)
+        # Phát hiện cơ thể
+        bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50), flags=cv2.CASCADE_SCALE_IMAGE)
 
-    for (x, y, w, h) in bodies:
-        centroid_x = x + w // 2
-        centroid_y = y + h // 2
-
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        cv2.circle(frame, (centroid_x, centroid_y), 4, (0, 0, 255), -1)
-
-        tracked = False
-        object_id = None
-        for obj_id, values in tracking_objects.items():
-            try:
-                _, bbox, prev_centroid, status = values
-                x1, y1, w1, h1 = bbox
-                dist = ((centroid_x - prev_centroid[0]) ** 2 + (centroid_y - prev_centroid[1]) ** 2) ** 0.5
-            except:
-                continue
-
-            if dist < 50:
-                tracked = True
-                object_id = obj_id
-                break
-
-        if not tracked:
+        # Theo dõi cơ thể
+        for (x, y, w, h) in bodies:
             bbox = (x, y, w, h)
-            tracking_objects[next_object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
-            object_id = next_object_id
-            next_object_id += 1
 
-            tracker.init(frame, bbox)
+            tracked = False
+            object_id = None
+            for obj_id, values in tracking_objects.items():
+                _, prev_bbox, _, status = values
+                x1, y1, w1, h1 = prev_bbox
+                dist = ((x - x1) ** 2 + (y - y1) ** 2) ** 0.5
 
-        if centroid_y < line[0][1]:
-            exit_count += 1
-            tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'out')
-            message = f"Person {object_id} exited. Total exit count: {exit_count}"
-            print(message)
-        elif centroid_y > line[1][1]:
-            enter_count += 1
-            tracking_objects[object_id] = (tracker, bbox, (centroid_x, centroid_y), 'in')
-            message = f"Person {object_id} entered. Total enter count: {enter_count}"
-            print(message)
-            
+                if dist < 50:
+                    tracked = True
+                    object_id = obj_id
+                    break
+
+            if not tracked:
+                tracking_objects[next_object_id] = (tracker, bbox, 'out')
+                object_id = next_object_id
+                next_object_id += 1
+
+                tracker.init(frame, bbox)
+
+            if y < line[0][1] and tracking_objects[object_id][2] != 'in':
+                enter_count += 1
+                tracking_objects[object_id] = (tracker, bbox, 'in')
+                message = f"Person {object_id} entered. Total enter count: {enter_count}"
+                print(message)
+            elif y + h > line[1][1] and tracking_objects[object_id][2] != 'out':
+                exit_count += 1
+                tracking_objects[object_id] = (tracker, bbox, 'out')
+                message = f"Person {object_id} exited. Total exit count: {exit_count}"
+                print(message)
 
         for obj_id, values in list(tracking_objects.items()):
             try:
-                _, bbox, _, status = values
+                _, prev_bbox, status = values
             except ValueError:
                 st.warning(f"Skipping invalid values for object ID: {obj_id}")
                 continue
@@ -91,23 +84,22 @@ while True:
             success, new_bbox = tracker.update(frame)
 
             if success:
-                (x1, y1, w1, h1) = [int(v) for v in new_bbox]
-                tracking_objects[obj_id] = (tracker, new_bbox, (x1 + w1 // 2, y1 + h1 // 2), status)
+                tracking_objects[obj_id] = (tracker, new_bbox, status)
             else:
                 del tracking_objects[obj_id]
 
         cv2.putText(frame, f"Enter: {enter_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         cv2.putText(frame, f"Exit: {exit_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        for obj_id, (_, bbox, _, status) in tracking_objects.items():
-            x1, y1, w1, h1 = bbox
+        for obj_id, (_, bbox, status) in tracking_objects.items():
+            x1, y1, w1, h1 = [int(v) for v in bbox]
             cv2.rectangle(frame, (x1, y1), (x1 + w1, y1 + h1), (0, 255, 0), 2)
             cv2.putText(frame, f"ID: {str(obj_id)} - {status}", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-        # Display the frame in the Streamlit app
+        # Hiển thị frame trong ứng dụng Streamlit
         image_placeholder.image(frame, channels="BGR", use_column_width=True)
 
-    # Release the camera when the app is closed
+    # Giải phóng camera khi ứng dụng đóng
     cap.release()
 
 if __name__ == "__main__":
